@@ -8,10 +8,8 @@ from .serializers import AnalyzedStringSerializer
 from .utils import compute_properties, parse_nl_query
 from hashlib import sha256
 
-
 class ListCreateStringView(generics.ListCreateAPIView):
     """Handles GET / POST on /api/strings
-
     - GET: list with filters
     - POST: create/analyze a string
     """
@@ -41,7 +39,22 @@ class ListCreateStringView(generics.ListCreateAPIView):
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         data = AnalyzedStringSerializer(queryset, many=True).data
-        filters_applied = dict(request.query_params)
+        # Normalize filter types to match spec (booleans/ints/strings)
+        def parse_param(k, v):
+            if k == 'is_palindrome':
+                return v.lower() == 'true'
+            if k in ('min_length', 'max_length', 'word_count'):
+                try:
+                    return int(v)
+                except Exception:
+                    # leave as original to allow error handling elsewhere
+                    return v
+            return v
+
+        filters_applied = {}
+        for k, v in request.query_params.items():
+            filters_applied[k] = parse_param(k, v)
+
         return Response({'data': data, 'count': len(data), 'filters_applied': filters_applied})
 
     def post(self, request, *args, **kwargs):
@@ -61,7 +74,6 @@ class ListCreateStringView(generics.ListCreateAPIView):
         )
         return Response(AnalyzedStringSerializer(record).data, status=201)
 
-
 class RetrieveDeleteStringView(APIView):
     """Handles GET and DELETE on /api/strings/<string_value>"""
 
@@ -77,7 +89,6 @@ class RetrieveDeleteStringView(APIView):
             return Response({'error': 'Not found'}, status=404)
         record.delete()
         return Response(status=204)
-
 
 class NaturalLanguageFilterView(APIView):
     def get(self, request):
@@ -97,7 +108,6 @@ class NaturalLanguageFilterView(APIView):
             qs = qs.filter(length__gte=parsed['min_length'])
         if parsed.get('contains_character'):
             qs = qs.filter(value__icontains=parsed['contains_character'])
-
 
         data = AnalyzedStringSerializer(qs, many=True).data
         return Response({
